@@ -1,15 +1,18 @@
 [general]
 name=Message Bar Tamer
-description=屏蔽 / 减弱 QGIS 地图画布顶部的 MessageBar（红色 / 黄色提示横幅）。
-about=通过打补丁拦截 QgsMessageBar.pushMessage / pushWidget，提供「按级别过滤 / 完全隐藏 / 自动收起」三种模式，被屏蔽的消息可同时写入日志面板。
+description=Tame or suppress the noisy QGIS MessageBar banners (red / yellow). Filter by level, hide completely, or auto-dismiss. Optional keyword blocklist, toolbar button + Ctrl+Shift+M toggle. Works on QGIS 3.x (PyQt5) and 4.x (PyQt6).
+about=Patches QgsMessageBar.pushMessage / pushWidget to intercept banners before they appear. Three modes (threshold / off / reduce), keyword blocklist, and a log fallback that writes suppressed messages to the Log Messages panel so you never miss a real error.
 version=0.2
 qgisMinimumVersion=3.0
 qgisMaximumVersion=4.99
-author=WorkBuddy
-email=
-icon=
+author=bunkmr
+email=bunkmr@users.noreply.github.com
+icon=icon.png
 tags=messagebar,ui,ux
 category=Plugins
+homepage=https://github.com/bunkmr/qgis-message-bar-tamer
+repository=https://github.com/bunkmr/qgis-message-bar-tamer
+tracker=https://github.com/bunkmr/qgis-message-bar-tamer/issues
 experimental=False
 deprecated=False
-changelog=0.2: 新增关键词精准屏蔽、工具栏按钮+Ctrl+Shift+M一键切换、发布用zip打包; 0.1: 初版三种模式与日志兜底
+changelog=0.2: keyword blocklist, toolbar button + Ctrl+Shift+M toggle, redesigned settings UI; 0.1: initial three modes + log fallback
