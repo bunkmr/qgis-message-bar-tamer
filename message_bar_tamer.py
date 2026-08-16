@@ -23,7 +23,7 @@ v0.2 新增能力
 
 import os
 
-from qgis.PyQt.QtCore import QSettings, QSize
+from qgis.PyQt.QtCore import QSettings, QSize, QTimer
 from qgis.PyQt.QtGui import QKeySequence, QIcon, QFont
 from qgis.PyQt.QtWidgets import (
     QAction,
@@ -116,6 +116,11 @@ class MessageBarTamer:
                 self.message_bar.pushWidget = self.orig_pushWidget
             except Exception:
                 pass
+        if self.message_bar is not None:
+            try:
+                self.message_bar.widgetAdded.disconnect(self._on_widget_added)
+            except Exception:
+                pass
         if self.action_settings is not None:
             self.iface.removePluginMenu("&Message Bar Tamer", self.action_settings)
         if self.action_toggle is not None:
@@ -142,6 +147,13 @@ class MessageBarTamer:
             self.orig_pushWidget = self.message_bar.pushWidget
             self.message_bar.pushMessage = self._patched_pushMessage
             self.message_bar.pushWidget = self._patched_pushWidget
+            # 信号兜底：拦截 C++ 内核（如瓦片网络超时）直接 push 的横幅。
+            # monkey-patch 只拦 Python 侧，C++ 调用走 C++ 层、绕过了补丁，
+            # 只能等 widget 出现后用 widgetAdded 信号移除。
+            try:
+                self.message_bar.widgetAdded.connect(self._on_widget_added)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ #
     # 关键词解析 / 匹配
@@ -237,6 +249,49 @@ class MessageBarTamer:
 
         # reduce 模式无法改变 widget 自带停留逻辑，原样放行
         return self.orig_pushWidget(*args, **kwargs)
+
+    # ------------------------------------------------------------------ #
+    # widgetAdded 信号兜底（覆盖 C++ 内核直接 push 的横幅）
+    # ------------------------------------------------------------------ #
+    def _on_widget_added(self, item):
+        """C++ 内核（网络瓦片超时、部分 CRS 提示等）直接 push 的横幅，
+        monkey-patch 拦不到，只能等 widget 出现后在此移除。"""
+        if not self.settings["enabled"] or item is None:
+            return
+        try:
+            title = item.title() or ""
+            text = item.text() or ""
+            level = int(item.level())
+        except Exception:
+            return
+
+        should_remove = False
+        note = ""
+        if self.settings["mode"] == MODE_OFF:
+            should_remove = True
+            note = "（已隐藏）"
+        elif self._blocked(title, text, level):
+            should_remove = True
+            note = "（命中关键词已隐藏）"
+        elif self.settings["mode"] == MODE_THRESHOLD and level < int(self.settings["min_level"]):
+            should_remove = True
+            note = "（低于阈值已隐藏）"
+
+        if should_remove:
+            # 延迟一帧再移除：避免在处理 widgetAdded 信号期间直接改动消息栏导致重入
+            QTimer.singleShot(0, lambda: self._remove_item(item, note, title, text, level))
+        elif self.settings["mode"] == MODE_REDUCE:
+            cap = self.settings["auto_close_sec"]
+            QTimer.singleShot(cap * 1000, lambda: self._remove_item(item, "（自动收起）", title, text, level))
+
+    def _remove_item(self, item, note, title, text, level):
+        if item is None or self.message_bar is None:
+            return
+        try:
+            self._maybe_log(note, title, text, level)
+            self.message_bar.popWidget(item)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ #
     # 一键切换

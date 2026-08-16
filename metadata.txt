@@ -1,8 +1,8 @@
 [general]
 name=Message Bar Tamer
 description=Tame or suppress the noisy QGIS MessageBar banners (red / yellow). Filter by level, hide completely, or auto-dismiss. Optional keyword blocklist, toolbar button + Ctrl+Shift+M toggle. Works on QGIS 3.x (PyQt5) and 4.x (PyQt6).
-about=Patches QgsMessageBar.pushMessage / pushWidget to intercept banners before they appear. Three modes (threshold / off / reduce), keyword blocklist, and a log fallback that writes suppressed messages to the Log Messages panel so you never miss a real error.
-version=0.2
+about=Patches QgsMessageBar.pushMessage / pushWidget AND listens to the widgetAdded signal, so it catches banners from both the Python side and the C++ core (e.g. tile network timeouts, some CRS prompts). Three modes (threshold / off / reduce), keyword blocklist, and a log fallback that writes suppressed messages to the Log Messages panel so you never miss a real error.
+version=0.3
 qgisMinimumVersion=3.0
 qgisMaximumVersion=4.99
 author=bunkmr
@@ -15,4 +15,4 @@ repository=https://github.com/bunkmr/qgis-message-bar-tamer
 tracker=https://github.com/bunkmr/qgis-message-bar-tamer/issues
 experimental=False
 deprecated=False
-changelog=0.2: keyword blocklist, toolbar button + Ctrl+Shift+M toggle, redesigned settings UI; 0.1: initial three modes + log fallback
+changelog=0.3: widgetAdded signal fallback to suppress C++-core banners (tile network timeouts, CRS prompts) that monkey-patch missed; 0.2: keyword blocklist, toolbar button + Ctrl+Shift+M toggle, redesigned settings UI; 0.1: initial three modes + log fallback
