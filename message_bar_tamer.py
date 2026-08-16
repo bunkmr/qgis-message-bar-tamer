@@ -23,7 +23,7 @@ v0.2 新增能力
 
 import os
 
-from qgis.PyQt.QtCore import QSettings, QSize, QTimer
+from qgis.PyQt.QtCore import QSettings, QSize, QTimer, QObject, QEvent
 from qgis.PyQt.QtGui import QKeySequence, QIcon, QFont
 from qgis.PyQt.QtWidgets import (
     QAction,
@@ -58,8 +58,9 @@ MODE_REDUCE = "reduce"
 SETTINGS_NS = "messagebartamer"
 
 
-class MessageBarTamer:
+class MessageBarTamer(QObject):
     def __init__(self, iface):
+        super().__init__()
         self.iface = iface
         self.plugin_dir = os.path.dirname(__file__)
         self.message_bar = None
@@ -68,12 +69,13 @@ class MessageBarTamer:
         self.action_settings = None
         self.action_toggle = None
         self.shortcut = None
+        self._handled_ids = set()         # 已处理过的横幅 item id，去重
 
         # 默认设置（随后用 QSettings 覆盖）
         self.settings = {
             "enabled": True,
-            "mode": MODE_REDUCE,           # 默认「自动收起」，最保守
-            "min_level": LEVEL_CRITICAL,   # threshold 模式下保留 >= Critical
+            "mode": MODE_THRESHOLD,        # 默认「按级别过滤」：干掉 Info/Warning 黄色噪音
+            "min_level": LEVEL_CRITICAL,   # threshold 模式下保留 >= Critical（红色报错）
             "auto_close_sec": 5,
             "log_filtered": True,
             "blocklist": "",               # 关键词，换行/逗号分隔
@@ -121,6 +123,10 @@ class MessageBarTamer:
                 self.message_bar.widgetAdded.disconnect(self._on_widget_added)
             except Exception:
                 pass
+            try:
+                self.message_bar.removeEventFilter(self)
+            except Exception:
+                pass
         if self.action_settings is not None:
             self.iface.removePluginMenu("&Message Bar Tamer", self.action_settings)
         if self.action_toggle is not None:
@@ -152,6 +158,12 @@ class MessageBarTamer:
             # 只能等 widget 出现后用 widgetAdded 信号移除。
             try:
                 self.message_bar.widgetAdded.connect(self._on_widget_added)
+            except Exception:
+                pass
+            # 事件过滤器兜底：即便 widgetAdded 信号因版本差异未触发，
+            # 也能通过 ChildAdded 事件捕获新加入的横幅（C++ 内核瓦片超时等）。
+            try:
+                self.message_bar.installEventFilter(self)
             except Exception:
                 pass
 
@@ -251,38 +263,62 @@ class MessageBarTamer:
         return self.orig_pushWidget(*args, **kwargs)
 
     # ------------------------------------------------------------------ #
-    # widgetAdded 信号兜底（覆盖 C++ 内核直接 push 的横幅）
+    # C++ 内核横幅兜底：widgetAdded 信号 + 事件过滤器 双保险
+    # （monkey-patch 只能拦 Python 侧，C++ 内核瓦片网络超时等走 C++ 层）
     # ------------------------------------------------------------------ #
     def _on_widget_added(self, item):
-        """C++ 内核（网络瓦片超时、部分 CRS 提示等）直接 push 的横幅，
-        monkey-patch 拦不到，只能等 widget 出现后在此移除。"""
-        if not self.settings["enabled"] or item is None:
+        """widgetAdded 信号回调：C++ 内核直接 push 的横幅在此出现。"""
+        if not isinstance(item, QgsMessageBarItem):
             return
         try:
+            level = int(item.level())
             title = item.title() or ""
             text = item.text() or ""
-            level = int(item.level())
         except Exception:
+            level, title, text = LEVEL_INFO, "", ""
+        self._handle_item(item, level, title, text)
+
+    def eventFilter(self, obj, event):
+        """事件过滤器兜底：捕获消息栏新加入的子控件（含 C++ 内核横幅）。"""
+        if event.type() == QEvent.Type.ChildAdded:
+            child = event.child()
+            if isinstance(child, QgsMessageBarItem):
+                try:
+                    level = int(child.level())
+                    title = child.title() or ""
+                    text = child.text() or ""
+                except Exception:
+                    level, title, text = LEVEL_INFO, "", ""
+                self._handle_item(child, level, title, text)
+        return super().eventFilter(obj, event)
+
+    def _handle_item(self, item, level, title, text):
+        if not self.settings["enabled"] or item is None:
             return
-
-        should_remove = False
-        note = ""
-        if self.settings["mode"] == MODE_OFF:
-            should_remove = True
-            note = "（已隐藏）"
-        elif self._blocked(title, text, level):
-            should_remove = True
-            note = "（命中关键词已隐藏）"
-        elif self.settings["mode"] == MODE_THRESHOLD and level < int(self.settings["min_level"]):
-            should_remove = True
-            note = "（低于阈值已隐藏）"
-
-        if should_remove:
-            # 延迟一帧再移除：避免在处理 widgetAdded 信号期间直接改动消息栏导致重入
+        iid = id(item)
+        if iid in self._handled_ids:
+            return
+        self._handled_ids.add(iid)
+        action, note = self._decide(level, title, text)
+        if action == "now":
+            # 延迟一帧再移除：避免在处理信号/事件期间直接改动消息栏导致重入
             QTimer.singleShot(0, lambda: self._remove_item(item, note, title, text, level))
-        elif self.settings["mode"] == MODE_REDUCE:
+        elif action == "later":
             cap = self.settings["auto_close_sec"]
-            QTimer.singleShot(cap * 1000, lambda: self._remove_item(item, "（自动收起）", title, text, level))
+            QTimer.singleShot(cap * 1000, lambda: self._remove_item(item, note, title, text, level))
+        # action == "keep"：原样保留
+
+    def _decide(self, level, title, text):
+        """根据当前模式决定如何处理一条横幅。返回 ('now'|'later'|'keep', 备注)。"""
+        if self.settings["mode"] == MODE_OFF:
+            return "now", "（已隐藏）"
+        if self._blocked(title, text, level):
+            return "now", "（命中关键词已隐藏）"
+        if self.settings["mode"] == MODE_THRESHOLD and int(level) < int(self.settings["min_level"]):
+            return "now", "（低于阈值已隐藏）"
+        if self.settings["mode"] == MODE_REDUCE:
+            return "later", "（自动收起）"
+        return "keep", ""
 
     def _remove_item(self, item, note, title, text, level):
         if item is None or self.message_bar is None:
@@ -292,6 +328,7 @@ class MessageBarTamer:
             self.message_bar.popWidget(item)
         except Exception:
             pass
+        self._handled_ids.discard(id(item))
 
     # ------------------------------------------------------------------ #
     # 一键切换
@@ -561,3 +598,14 @@ class MessageBarTamer:
         self.settings["blocklist_all_levels"] = s.value(
             SETTINGS_NS + "/blocklist_all_levels", False, type=bool
         )
+
+        # ---- 迁移：v0.4 起默认改为「按级别过滤 + 保留 Critical」 ----
+        # 旧版本默认「自动收起」对 C++ 内核持续刷新的横幅（如瓦片网络超时）
+        # 几乎无效，用户感知为「没屏蔽」。升级后让默认即直接干掉黄色噪音。
+        schema = s.value(SETTINGS_NS + "/schema_version", 0, type=int)
+        if schema < 2 and self.settings["mode"] == MODE_REDUCE:
+            self.settings["mode"] = MODE_THRESHOLD
+            self.settings["min_level"] = LEVEL_CRITICAL
+            s.setValue(SETTINGS_NS + "/mode", self.settings["mode"])
+            s.setValue(SETTINGS_NS + "/min_level", int(self.settings["min_level"]))
+        s.setValue(SETTINGS_NS + "/schema_version", 2)
