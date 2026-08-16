@@ -24,7 +24,7 @@ v0.2 新增能力
 import os
 
 from qgis.PyQt.QtCore import QSettings, QSize
-from qgis.PyQt.QtGui import QKeySequence, QIcon
+from qgis.PyQt.QtGui import QKeySequence, QIcon, QFont
 from qgis.PyQt.QtWidgets import (
     QAction,
     QDialog,
@@ -40,7 +40,6 @@ from qgis.PyQt.QtWidgets import (
     QDialogButtonBox,
     QPlainTextEdit,
     QShortcut,
-    QFont,
 )
 from qgis.core import Qgis, QgsApplication
 from qgis.gui import QgsMessageBar, QgsMessageBarItem
