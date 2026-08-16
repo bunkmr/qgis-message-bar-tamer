@@ -1,0 +1,15 @@
+[general]
+name=Message Bar Tamer
+description=屏蔽 / 减弱 QGIS 地图画布顶部的 MessageBar（红色 / 黄色提示横幅）。
+about=通过打补丁拦截 QgsMessageBar.pushMessage / pushWidget，提供「按级别过滤 / 完全隐藏 / 自动收起」三种模式，被屏蔽的消息可同时写入日志面板。
+version=0.2
+qgisMinimumVersion=3.0
+qgisMaximumVersion=4.99
+author=WorkBuddy
+email=
+icon=
+tags=messagebar,ui,ux
+category=Plugins
+experimental=False
+deprecated=False
+changelog=0.2: 新增关键词精准屏蔽、工具栏按钮+Ctrl+Shift+M一键切换、发布用zip打包; 0.1: 初版三种模式与日志兜底
