@@ -39,6 +39,7 @@ from qgis.PyQt.QtWidgets import (
     QLabel,
     QDialogButtonBox,
     QPlainTextEdit,
+    QPushButton,
     QShortcut,
 )
 from qgis.core import Qgis, QgsApplication
