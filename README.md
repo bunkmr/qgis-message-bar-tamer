@@ -15,6 +15,7 @@ QGIS 原生没有全局开关能彻底关闭 MessageBar。本插件在消息上�
 - **关键词精准屏蔽**：多行文本框，每行一个关键词；标题/正文命中即静音。默认只作用于 Info/Warning，避免误伤 Critical。
 - **一键切换**：工具栏按钮 + 快捷键 `Ctrl+Shift+M` 随时开关（切换提示走原始通道，确保你看得到反馈）。
 - **日志兜底**：被屏蔽的消息同时写入「日志消息」面板，关掉横幅 ≠ 错过报错。
+- **C++ 内核横幅全覆盖**：除了 monkey-patch Python 侧推送，还连接 `QgsMessageBar.widgetAdded` 信号，拦截 C++ 内核直接弹出的横幅（如**瓦片网络超时**、部分 CRS 提示）——这类走 C++ 层、绕过了 Python 补丁，旧版会漏网，v0.3 起已被覆盖。
 
 ## 安装
 
@@ -25,7 +26,7 @@ QGIS 原生没有全局开关能彻底关闭 MessageBar。本插件在消息上�
 2. 重启 QGIS → 插件 ▸ 管理并安装插件 ▸ 已安装 → 勾选 **Message Bar Tamer**。
 
 ### 方式二：从发布包安装
-下载 `MessageBarTamer.zip`，解压到上述插件目录即可。
+下载 `MessageBarTamer.0.3.zip`，解压到上述插件目录即可。
 
 ## 使用
 - 菜单 **插件 ▸ Message Bar Tamer ▸ Message Bar 调节器…** 调整模式与关键词，设置自动保存。
@@ -35,7 +36,8 @@ QGIS 原生没有全局开关能彻底关闭 MessageBar。本插件在消息上�
 - 同时支持 **QGIS 3.x（PyQt5）** 与 **QGIS 4.x（PyQt6）**。`metadata.txt` 声明范围 `3.0 – 4.99`。
 
 ## 已知局限
-- Monkey-patch `pushMessage/pushWidget` 只能拦截 **Python 侧** 推送的横幅；QGIS C++ 内核直接弹出的横幅（某些 CRS 提示）可能漏网。如需彻底覆盖，可改用连接 `QgsMessageBar.widgetAdded` 信号后移除 widget 的方案。
+- 极少数横幅若在 `widgetAdded` 信号触发前已被 C++ 同步绘制，可能极短暂闪现一帧后才被移除（移除动作延迟一帧执行以避免在信号回调中直接改动消息栏导致重入）。
+- 关键词屏蔽默认不作用于 Critical（红色报错），如需连红色也静音，请在设置里勾选「关键词屏蔽也作用于 Critical」。
 
 ## License
 MIT — 见 [LICENSE](LICENSE)。
